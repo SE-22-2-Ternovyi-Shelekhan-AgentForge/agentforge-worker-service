@@ -85,6 +85,8 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
             iters = output.get("iterations")
             if isinstance(iters, int):
                 acc.iterations = iters
+            if nxt == "END" and not acc.final_output and reasoning:
+                acc.final_output = reasoning
             return acc.make_event(
                 "supervisor_routed",
                 None,
