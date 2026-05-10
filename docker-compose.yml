@@ -28,6 +28,8 @@ services:
     build: .
     env_file:
       - .env
+    volumes:
+      - ./workspace:/workspace:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
