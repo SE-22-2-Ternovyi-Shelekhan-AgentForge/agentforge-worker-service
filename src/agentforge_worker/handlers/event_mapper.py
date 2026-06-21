@@ -1,4 +1,13 @@
-"""Map LangGraph stream events → AgentEventOccurred + accumulate trace."""
+"""Map LangGraph stream events → AgentEventOccurred + accumulate trace.
+
+The graph is a deterministic pipeline: every agent contributes in turn, then a
+``synthesizer`` node merges the contributions into the final answer. So:
+
+* each agent's output becomes a trace entry (the per-competence detail the UI
+  shows under "Внесок команди");
+* the synthesizer's output becomes ``final_output`` (the summary shown as the
+  assistant's main reply).
+"""
 
 from dataclasses import dataclass, field
 from typing import Any
@@ -8,6 +17,7 @@ from langchain_core.messages import AIMessage, BaseMessage
 
 from agentforge_worker.contracts import AgentEventOccurred, TraceEntry
 
+SUMMARY_ROLE = "summary"
 _PREVIEW_LIMIT = 200
 
 
@@ -45,10 +55,10 @@ class SessionAccumulator:
     session_id: UUID
     conversation_id: UUID
     iterations: int = 0
-    last_supervisor_reasoning: str = ""
-    last_supervisor_next: str | None = None
     trace: list[TraceEntry] = field(default_factory=list)
     final_output: str = ""
+    # Fallback used if the synthesizer produces nothing.
+    last_agent_output: str = ""
     _current_agent: dict[str, _AgentRun] = field(default_factory=dict)
 
     def make_event(
@@ -75,31 +85,17 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
     metadata = ev.get("metadata", {}) or {}
     langgraph_node = metadata.get("langgraph_node")
 
-    if kind == "on_chain_end" and name == "supervisor":
-        output = data.get("output") or {}
-        nxt = output.get("next_agent")
-        reasoning = output.get("last_reasoning") or ""
-        if nxt is not None:
-            acc.last_supervisor_next = nxt
-            acc.last_supervisor_reasoning = reasoning
-            iters = output.get("iterations")
-            if isinstance(iters, int):
-                acc.iterations = iters
-            if nxt == "END" and not acc.final_output and reasoning:
-                acc.final_output = reasoning
-            return acc.make_event(
-                "supervisor_routed",
-                None,
-                {"next": nxt, "reasoning": reasoning},
-            )
-        return None
-
+    # ── an agent starts working ──
     if kind == "on_chain_start" and name.startswith("agent_"):
         role = _node_role(name)
         if role:
             acc._current_agent[role] = _AgentRun(role=role)
             return acc.make_event("agent_started", role, {})
         return None
+
+    # ── the synthesizer starts composing the summary ──
+    if kind == "on_chain_start" and name == "synthesizer":
+        return acc.make_event("agent_started", SUMMARY_ROLE, {})
 
     if kind == "on_tool_start":
         role = _node_role(langgraph_node) if langgraph_node else None
@@ -120,35 +116,52 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
             {"tool": name, "output_preview": _preview(str(out))},
         )
 
+    # ── an agent finished its contribution → record it in the trace ──
     if kind == "on_chain_end" and name.startswith("agent_"):
         role = _node_role(name)
-        output = data.get("output") or {}
-        msgs = output.get("messages") or []
-        last_msg = msgs[-1] if msgs else None
-        if isinstance(last_msg, AIMessage):
-            text = _extract_message_content(last_msg)
-        elif last_msg is not None:
-            text = _extract_message_content(last_msg)
-        else:
-            text = ""
+        text = _extract_agent_text(data)
         run = acc._current_agent.get(role) if role else None
         tools_used = list(run.tools_used) if run else []
         if role and run:
             run.last_output = text
             # Agents tag output as "[role]: <content>". A repeated/redundant
-            # turn can yield empty content; don't let it clobber the final
-            # answer or pollute the trace with a blank step.
+            # turn can yield empty content; skip blank steps.
             prefix = f"[{role}]: "
             real = text[len(prefix):] if text.startswith(prefix) else text
             if real.strip():
                 acc.trace.append(
                     TraceEntry(agent_role=role, output=text, tools_used=tools_used)
                 )
-                acc.final_output = text
+                acc.iterations += 1
+                acc.last_agent_output = text
         return acc.make_event(
             "agent_finished",
             role,
             {"output_preview": _preview(text), "tools_used": tools_used},
         )
 
+    # ── the synthesizer finished → its output is the final answer ──
+    if kind == "on_chain_end" and name == "synthesizer":
+        text = _extract_agent_text(data).strip()
+        if text:
+            acc.final_output = text
+        return acc.make_event(
+            "agent_finished",
+            SUMMARY_ROLE,
+            {"output_preview": _preview(text)},
+        )
+
     return None
+
+
+def _extract_agent_text(data: dict) -> str:
+    """Pull the last message's text from a node's output payload."""
+    output = data.get("output") or {}
+    msgs = output.get("messages") if isinstance(output, dict) else None
+    msgs = msgs or []
+    last_msg = msgs[-1] if msgs else None
+    if isinstance(last_msg, AIMessage):
+        return _extract_message_content(last_msg)
+    if last_msg is not None:
+        return _extract_message_content(last_msg)
+    return ""

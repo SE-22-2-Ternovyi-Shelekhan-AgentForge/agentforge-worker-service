@@ -1,43 +1,40 @@
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agentforge_worker.config import Settings
 from agentforge_worker.contracts import AgentSessionRequested
 from agentforge_worker.graph.agent_node import make_agent_node
 from agentforge_worker.graph.state import GraphState
-from agentforge_worker.graph.supervisor import make_supervisor_node
+from agentforge_worker.graph.synthesizer import make_synthesizer_node
 from agentforge_worker.tools import ToolContext
 
 
 def build_graph(req: AgentSessionRequested, settings: Settings, ctx: ToolContext) -> CompiledStateGraph:
-    g = StateGraph(GraphState)
-    g.add_node("supervisor", make_supervisor_node(req.team, settings))
+    """Build a deterministic collaboration pipeline.
 
-    agent_node_names = []
+    Every agent in the team contributes in turn, each seeing the user request
+    and the contributions of the colleagues before it, answering strictly from
+    its own competence. A final synthesizer node merges all contributions into
+    one coherent answer for the user:
+
+        START → agent_1 → agent_2 → … → agent_N → synthesizer → END
+    """
+    g = StateGraph(GraphState)
+
+    roles = [a.role for a in req.team.agents]
+    node_names: list[str] = []
     for agent in req.team.agents:
         node_name = f"agent_{agent.role}"
-        agent_node_names.append(node_name)
-        g.add_node(node_name, make_agent_node(agent, settings, ctx))
+        node_names.append(node_name)
+        g.add_node(node_name, make_agent_node(agent, settings, ctx, peers=roles))
 
-    g.set_entry_point("supervisor")
+    g.add_node("synthesizer", make_synthesizer_node(req.team, settings))
 
-    max_iter = req.team.max_iterations
-
-    def route(state: GraphState):
-        if state["iterations"] >= max_iter:
-            return END
-        nxt = state.get("next_agent")
-        if nxt in (None, "END"):
-            return END
-        target = f"agent_{nxt}"
-        if target not in agent_node_names:
-            return END
-        return target
-
-    branches: dict = {n: n for n in agent_node_names}
-    branches[END] = END
-    g.add_conditional_edges("supervisor", route, branches)
-    for n in agent_node_names:
-        g.add_edge(n, "supervisor")
+    # Wire the agents in order, then into the synthesizer.
+    g.add_edge(START, node_names[0])
+    for prev, nxt in zip(node_names, node_names[1:]):
+        g.add_edge(prev, nxt)
+    g.add_edge(node_names[-1], "synthesizer")
+    g.add_edge("synthesizer", END)
 
     return g.compile()

@@ -110,17 +110,10 @@ async def _run_session_async(
         ),
     )
 
-    stop_reason = "supervisor_end"
     async for ev in graph.astream_events(initial_state, version="v2"):
         mapped = map_event(ev, acc)
         if mapped is not None:
             publish_event(channel, mapped)
-
-    if (
-        acc.iterations >= req.team.max_iterations
-        and acc.last_supervisor_next not in (None, "END")
-    ):
-        stop_reason = "max_iterations"
 
     publish_event(
         channel,
@@ -128,16 +121,13 @@ async def _run_session_async(
             session_id=req.session_id,
             conversation_id=req.conversation_id,
             event_type="session_finished",
-            payload={"iterations": acc.iterations, "stop_reason": stop_reason},
+            payload={"iterations": acc.iterations, "stop_reason": "completed"},
         ),
     )
 
-    if stop_reason == "max_iterations":
-        raise _MaxIterationsExceeded(
-            f"supervisor did not reach END within {req.team.max_iterations} iterations"
-        )
-
-    final = acc.final_output or "(no agent produced output)"
+    # Prefer the synthesizer's summary; fall back to the last agent's output if
+    # synthesis produced nothing.
+    final = acc.final_output or acc.last_agent_output or "(no agent produced output)"
     completed = AgentSessionCompleted(
         session_id=req.session_id,
         conversation_id=req.conversation_id,
