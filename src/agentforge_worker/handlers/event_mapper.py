@@ -133,10 +133,16 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
         tools_used = list(run.tools_used) if run else []
         if role and run:
             run.last_output = text
-            acc.trace.append(
-                TraceEntry(agent_role=role, output=text, tools_used=tools_used)
-            )
-            acc.final_output = text
+            # Agents tag output as "[role]: <content>". A repeated/redundant
+            # turn can yield empty content; don't let it clobber the final
+            # answer or pollute the trace with a blank step.
+            prefix = f"[{role}]: "
+            real = text[len(prefix):] if text.startswith(prefix) else text
+            if real.strip():
+                acc.trace.append(
+                    TraceEntry(agent_role=role, output=text, tools_used=tools_used)
+                )
+                acc.final_output = text
         return acc.make_event(
             "agent_finished",
             role,
