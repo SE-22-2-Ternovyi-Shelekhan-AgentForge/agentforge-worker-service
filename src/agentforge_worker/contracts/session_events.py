@@ -13,6 +13,7 @@ EventType = Literal[
     "session_started",
     "supervisor_routed",
     "agent_started",
+    "agent_token",
     "tool_called",
     "tool_result",
     "agent_finished",

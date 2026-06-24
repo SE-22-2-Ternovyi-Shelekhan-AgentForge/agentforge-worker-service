@@ -94,6 +94,18 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
             )
         return None
 
+    if kind == "on_chat_model_stream":
+        role = _node_role(langgraph_node) if langgraph_node else None
+        if role is None:
+            return None
+        chunk = data.get("chunk")
+        if chunk is None:
+            return None
+        content = getattr(chunk, "content", "") or ""
+        if not content:
+            return None
+        return acc.make_event("agent_token", role, {"token": content})
+
     if kind == "on_chain_start" and name.startswith("agent_"):
         role = _node_role(name)
         if role:
