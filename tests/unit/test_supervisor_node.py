@@ -19,7 +19,7 @@ def test_routes_to_valid_agent(mocker, fake_settings, simple_team):
         mocker, fake_settings, simple_team,
         SupervisorDecision(next="researcher", reasoning="needs research"),
     )
-    result = node(make_graph_state())
+    result = node(make_graph_state(agents_visited=["researcher", "writer"]))
 
     assert result["next_agent"] == "researcher"
     assert result["iterations"] == 1
@@ -31,7 +31,7 @@ def test_hallucination_falls_back_to_END(mocker, fake_settings, simple_team):
         mocker, fake_settings, simple_team,
         SupervisorDecision(next="nonexistent_role", reasoning="confused"),
     )
-    result = node(make_graph_state())
+    result = node(make_graph_state(agents_visited=["researcher", "writer"]))
 
     assert result["next_agent"] == "END"
 
@@ -41,7 +41,7 @@ def test_routes_to_END(mocker, fake_settings, simple_team):
         mocker, fake_settings, simple_team,
         SupervisorDecision(next="END", reasoning="task complete"),
     )
-    result = node(make_graph_state())
+    result = node(make_graph_state(agents_visited=["researcher", "writer"]))
 
     assert result["next_agent"] == "END"
     assert result["last_reasoning"] == "task complete"

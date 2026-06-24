@@ -38,6 +38,9 @@ def make_agent_node(agent: AgentConfig, settings: Settings, ctx: ToolContext):
             )
         else:
             tagged = new_msg
-        return {"messages": [tagged]}
+        visited = list(state.get("agents_visited") or [])
+        if role not in visited:
+            visited = visited + [role]
+        return {"messages": [tagged], "agents_visited": visited}
 
     return node

@@ -7,15 +7,15 @@ from agentforge_worker.graph.state import GraphState
 from agentforge_worker.llm import make_chat_model
 
 DEFAULT_SUPERVISOR_PROMPT = """\
-Ти — координатор команди агентів. Твоя задача: на основі поточної історії розмови і запиту користувача обрати наступного агента, який має продовжити роботу. Якщо задача виконана — відповідай END.
+Ти — координатор команди агентів. Усі агенти вже виконали свою роботу, їхні відповіді є в історії розмови. Твоя задача: оцінити чи задача повністю виконана.
 
 Доступні агенти:
 {agents_description}
 
 Правила:
-- Обирай тільки одного агента або END.
-- Якщо користувач уже отримав достатню відповідь, обирай END.
-- Не повторюй того самого агента поспіль без явної потреби.
+- Якщо задача повністю виконана — відповідай END.
+- Якщо потрібен ще один прохід від конкретного агента — вкажи його роль.
+- Не повторюй агента без явної потреби.
 
 Відповідай у JSON: {{"next": "<agent_role>" або "END", "reasoning": "коротке обґрунтування"}}.
 """
@@ -44,6 +44,15 @@ def make_supervisor_node(team: TeamConfig, settings: Settings):
     valid_roles = {a.role for a in team.agents}
 
     def node(state: GraphState) -> dict:
+        visited = set(state.get("agents_visited") or [])
+        unvisited = [a.role for a in team.agents if a.role not in visited]
+        if unvisited:
+            nxt = unvisited[0]
+            return {
+                "next_agent": nxt,
+                "last_reasoning": f"fast-path: {nxt} has not yet contributed",
+                "iterations": state["iterations"] + 1,
+            }
         decision: SupervisorDecision = llm.invoke(
             [SystemMessage(content=prompt), *state["messages"]]
         )

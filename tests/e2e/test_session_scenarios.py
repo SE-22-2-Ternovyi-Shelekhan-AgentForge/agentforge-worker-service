@@ -74,6 +74,7 @@ def _initial_state(req: AgentSessionRequested) -> dict:
         "last_reasoning": None,
         "scratchpad": {},
         "trace": [],
+        "agents_visited": [],
     }
 
 

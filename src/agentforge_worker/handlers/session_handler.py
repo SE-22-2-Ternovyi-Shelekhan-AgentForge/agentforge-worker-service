@@ -95,6 +95,7 @@ async def _run_session_async(
         "last_reasoning": None,
         "scratchpad": ctx.scratchpad,
         "trace": [],
+        "agents_visited": [],
     }
 
     publish_event(

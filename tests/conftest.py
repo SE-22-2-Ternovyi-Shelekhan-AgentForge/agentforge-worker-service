@@ -39,7 +39,7 @@ def session_request(simple_team):
     )
 
 
-def make_graph_state(messages=None) -> GraphState:
+def make_graph_state(messages=None, agents_visited=None) -> GraphState:
     return GraphState(
         session_id=uuid4(),
         conversation_id=uuid4(),
@@ -49,4 +49,5 @@ def make_graph_state(messages=None) -> GraphState:
         last_reasoning=None,
         scratchpad={},
         trace=[],
+        agents_visited=agents_visited if agents_visited is not None else [],
     )

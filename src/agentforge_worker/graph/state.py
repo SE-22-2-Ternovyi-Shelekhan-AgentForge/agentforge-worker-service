@@ -14,3 +14,4 @@ class GraphState(TypedDict):
     last_reasoning: str | None
     scratchpad: dict[str, str]
     trace: list[dict[str, Any]]
+    agents_visited: list[str]
