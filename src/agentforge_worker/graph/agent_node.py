@@ -8,7 +8,7 @@ from agentforge_worker.llm import make_chat_model
 from agentforge_worker.tools import ToolContext, get_tools
 
 
-def make_agent_node(agent: AgentConfig, settings: Settings, ctx: ToolContext):
+def make_agent_node(agent: AgentConfig, settings: Settings, ctx: ToolContext, teammates: list | None = None):
     model_name = agent.model or settings.default_model
     temperature = (
         agent.temperature if agent.temperature is not None else settings.default_temperature
@@ -21,10 +21,15 @@ def make_agent_node(agent: AgentConfig, settings: Settings, ctx: ToolContext):
         timeout=settings.llm_timeout_seconds,
         settings=settings,
     )
+    system_prompt = agent.system_prompt
+    if teammates:
+        peers = "\n".join(f"- {a.role}: {a.system_prompt[:80]}..." for a in teammates)
+        system_prompt += f"\n\n---\nТвоя команда:\n{peers}\nТи можеш посилатися на роботу колег у своїй відповіді."
+
     prebuilt = create_react_agent(
         llm,
         tools,
-        prompt=SystemMessage(content=agent.system_prompt),
+        prompt=SystemMessage(content=system_prompt),
     )
     role = agent.role
 

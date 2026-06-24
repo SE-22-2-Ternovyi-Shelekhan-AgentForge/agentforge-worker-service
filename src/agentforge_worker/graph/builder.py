@@ -17,7 +17,8 @@ def build_graph(req: AgentSessionRequested, settings: Settings, ctx: ToolContext
     for agent in req.team.agents:
         node_name = f"agent_{agent.role}"
         agent_node_names.append(node_name)
-        g.add_node(node_name, make_agent_node(agent, settings, ctx))
+        teammates = [a for a in req.team.agents if a.role != agent.role]
+        g.add_node(node_name, make_agent_node(agent, settings, ctx, teammates=teammates))
 
     g.set_entry_point("supervisor")
 
