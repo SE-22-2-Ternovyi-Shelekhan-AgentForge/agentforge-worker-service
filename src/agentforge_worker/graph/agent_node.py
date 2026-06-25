@@ -1,4 +1,4 @@
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langgraph.prebuilt import create_react_agent
 
 from agentforge_worker.config import Settings
@@ -33,12 +33,34 @@ def make_agent_node(agent: AgentConfig, settings: Settings, ctx: ToolContext, te
     )
     role = agent.role
 
-    def node(state: GraphState) -> dict:
-        result = prebuilt.invoke({"messages": state["messages"]})
+    # Explicit "your turn" instruction. Without it, the last message in history
+    # is a teammate's tagged AIMessage (e.g. "[developer]: ...") and the model
+    # tends to continue that role instead of acting in its own — producing empty
+    # or echoed output. This human turn gives a clear signal to contribute as `role`.
+    # It is only used for the local invoke and is NOT persisted into shared state.
+    turn_instruction = HumanMessage(
+        content=(
+            f"Тепер твоя черга — ти агент із роллю «{role}». Виконай своє завдання "
+            f"відповідно до цієї ролі, спираючись на повідомлення вище. Не повторюй і "
+            f"не продовжуй чужі відповіді — дай власний внесок як «{role}»."
+        )
+    )
+
+    async def node(state: GraphState) -> dict:
+        result = await prebuilt.ainvoke(
+            {"messages": list(state["messages"]) + [turn_instruction]}
+        )
         new_msg = result["messages"][-1]
         if isinstance(new_msg, AIMessage):
+            prefix = f"[{role}]: "
+            content = new_msg.content
+            # The model sometimes self-prepends its own role tag (mimicking the
+            # "[role]: ..." format it sees in history). Strip it so we don't
+            # produce a doubled "[role]: [role]: ..." prefix.
+            if isinstance(content, str) and content.startswith(prefix):
+                content = content[len(prefix):]
             tagged = AIMessage(
-                content=f"[{role}]: {new_msg.content}",
+                content=f"{prefix}{content}",
                 additional_kwargs={**new_msg.additional_kwargs, "agent_role": role},
             )
         else:

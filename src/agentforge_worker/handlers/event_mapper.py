@@ -157,6 +157,14 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
                     TraceEntry(agent_role=role, output=text, tools_used=tools_used)
                 )
                 acc.final_output = text
+            else:
+                # Агент відпрацював, але без тексту (напр. слабка модель) — усе одно
+                # показуємо крок, щоб користувач бачив його участь. final_output не
+                # чіпаємо, щоб порожній прохід не затирав фінальну відповідь у чаті.
+                placeholder = f"{prefix}(агент не надав текстової відповіді)"
+                acc.trace.append(
+                    TraceEntry(agent_role=role, output=placeholder, tools_used=tools_used)
+                )
         return acc.make_event(
             "agent_finished",
             role,

@@ -30,6 +30,7 @@ def make_chat_model(
             model=model,
             temperature=temperature,
             timeout=timeout,
+            streaming=True,
         )
     if p == "openai":
         return ChatOpenAI(
@@ -38,5 +39,6 @@ def make_chat_model(
             timeout=timeout,
             api_key=settings.openai_api_key,
             base_url=settings.openai_base_url,
+            streaming=True,
         )
     raise UnknownProviderError(f"unsupported LLM provider: {provider!r}")
