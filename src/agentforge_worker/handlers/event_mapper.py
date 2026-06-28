@@ -22,6 +22,24 @@ def _node_role(node_name: str) -> str | None:
     return None
 
 
+def _role_from_metadata(metadata: dict) -> str | None:
+    """Resolve the team agent role for a streamed chat-model event.
+
+    ``create_react_agent`` wraps each agent in a subgraph whose inner node is
+    literally named ``agent`` — so ``langgraph_node`` on token events is
+    ``"agent"``, not ``"agent_<role>"``. The real outer node lives in the
+    checkpoint namespace path, e.g. ``"agent_developer:<id>|agent:<id>"``.
+    """
+    ns = metadata.get("langgraph_checkpoint_ns") or metadata.get("checkpoint_ns") or ""
+    for segment in ns.split("|"):
+        node = segment.split(":", 1)[0]
+        role = _node_role(node)
+        if role:
+            return role
+    # Fallback for the un-wrapped case (node addressed directly).
+    return _node_role(metadata.get("langgraph_node") or "")
+
+
 def _extract_message_content(msg: BaseMessage | None) -> str:
     if msg is None:
         return ""
@@ -45,6 +63,7 @@ class SessionAccumulator:
     session_id: UUID
     conversation_id: UUID
     iterations: int = 0
+    round: int = 1
     last_supervisor_reasoning: str = ""
     last_supervisor_next: str | None = None
     trace: list[TraceEntry] = field(default_factory=list)
@@ -85,6 +104,9 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
             iters = output.get("iterations")
             if isinstance(iters, int):
                 acc.iterations = iters
+            rnd = output.get("round")
+            if isinstance(rnd, int):
+                acc.round = rnd
             if nxt == "END" and not acc.final_output and reasoning:
                 acc.final_output = reasoning
             return acc.make_event(
@@ -95,7 +117,7 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
         return None
 
     if kind == "on_chat_model_stream":
-        role = _node_role(langgraph_node) if langgraph_node else None
+        role = _role_from_metadata(metadata)
         if role is None:
             return None
         chunk = data.get("chunk")
@@ -110,7 +132,7 @@ def map_event(ev: dict, acc: SessionAccumulator) -> AgentEventOccurred | None:
         role = _node_role(name)
         if role:
             acc._current_agent[role] = _AgentRun(role=role)
-            return acc.make_event("agent_started", role, {})
+            return acc.make_event("agent_started", role, {"round": acc.round})
         return None
 
     if kind == "on_tool_start":

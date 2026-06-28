@@ -39,12 +39,13 @@ def session_request(simple_team):
     )
 
 
-def make_graph_state(messages=None, agents_visited=None) -> GraphState:
+def make_graph_state(messages=None, agents_visited=None, round=1) -> GraphState:
     return GraphState(
         session_id=uuid4(),
         conversation_id=uuid4(),
         messages=messages or [HumanMessage(content="Hello")],
         iterations=0,
+        round=round,
         next_agent=None,
         last_reasoning=None,
         scratchpad={},

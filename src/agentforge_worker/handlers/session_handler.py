@@ -91,6 +91,7 @@ async def _run_session_async(
         "conversation_id": req.conversation_id,
         "messages": _build_initial_messages(req),
         "iterations": 0,
+        "round": 1,
         "next_agent": None,
         "last_reasoning": None,
         "scratchpad": ctx.scratchpad,
@@ -138,7 +139,18 @@ async def _run_session_async(
             f"supervisor did not reach END within {req.team.max_iterations} iterations"
         )
 
-    final = acc.final_output or "(no agent produced output)"
+    # The deliverable is the primary agent's (first in team order, e.g. developer)
+    # last substantive output — not the reviewer's closing "approved" remark, which
+    # would otherwise be the literal last turn. Reviewer notes stay visible in the
+    # dialogue/trace but don't become the final chat message.
+    primary_role = req.team.agents[0].role
+    primary_outputs = [
+        t.output for t in acc.trace if t.agent_role == primary_role and t.output.strip()
+    ]
+    final = (
+        (primary_outputs[-1] if primary_outputs else acc.final_output)
+        or "(no agent produced output)"
+    )
     completed = AgentSessionCompleted(
         session_id=req.session_id,
         conversation_id=req.conversation_id,

@@ -33,22 +33,31 @@ def make_agent_node(agent: AgentConfig, settings: Settings, ctx: ToolContext, te
     )
     role = agent.role
 
-    # Explicit "your turn" instruction. Without it, the last message in history
-    # is a teammate's tagged AIMessage (e.g. "[developer]: ...") and the model
-    # tends to continue that role instead of acting in its own — producing empty
-    # or echoed output. This human turn gives a clear signal to contribute as `role`.
-    # It is only used for the local invoke and is NOT persisted into shared state.
-    turn_instruction = HumanMessage(
-        content=(
-            f"Тепер твоя черга — ти агент із роллю «{role}». Виконай своє завдання "
-            f"відповідно до цієї ролі, спираючись на повідомлення вище. Не повторюй і "
-            f"не продовжуй чужі відповіді — дай власний внесок як «{role}»."
-        )
-    )
+    def _turn_instruction(rnd: int) -> HumanMessage:
+        # Explicit "your turn" instruction. Without it, the last message in history
+        # is a teammate's tagged AIMessage (e.g. "[developer]: ...") and the model
+        # tends to continue that role instead of acting in its own — producing empty
+        # or echoed output. Used only for the local invoke, NOT persisted to state.
+        if rnd > 1:
+            body = (
+                f"Це раунд правок №{rnd}. Ти агент із роллю «{role}». Уважно прочитай "
+                f"зауваження колег вище. Якщо ти автор роботи — виправ свою попередню "
+                f"відповідь з урахуванням цих зауважень і наведи оновлений результат "
+                f"повністю. Якщо ти рецензент — перевір, чи враховано твої попередні "
+                f"зауваження, і якщо все гаразд, чітко напиши, що схвалюєш роботу."
+            )
+        else:
+            body = (
+                f"Тепер твоя черга — ти агент із роллю «{role}». Виконай своє завдання "
+                f"відповідно до цієї ролі, спираючись на повідомлення вище. Не повторюй і "
+                f"не продовжуй чужі відповіді — дай власний внесок як «{role}»."
+            )
+        return HumanMessage(content=body)
 
     async def node(state: GraphState) -> dict:
+        rnd = state.get("round") or 1
         result = await prebuilt.ainvoke(
-            {"messages": list(state["messages"]) + [turn_instruction]}
+            {"messages": list(state["messages"]) + [_turn_instruction(rnd)]}
         )
         new_msg = result["messages"][-1]
         if isinstance(new_msg, AIMessage):

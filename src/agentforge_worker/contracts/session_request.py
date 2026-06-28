@@ -25,6 +25,9 @@ class TeamConfig(BaseModel):
     supervisor_prompt: str | None = None
     agents: list[AgentConfig] = Field(min_length=1)
     max_iterations: int = 10
+    # How many full review rounds the team may run (developer → reviewer → revise → …).
+    # The supervisor may stop earlier when the reviewer is satisfied.
+    max_rounds: int = 2
 
 
 class AgentSessionRequested(BaseModel):

@@ -10,6 +10,7 @@ class GraphState(TypedDict):
     conversation_id: UUID
     messages: Annotated[list[BaseMessage], add_messages]
     iterations: int
+    round: int
     next_agent: str | None
     last_reasoning: str | None
     scratchpad: dict[str, str]

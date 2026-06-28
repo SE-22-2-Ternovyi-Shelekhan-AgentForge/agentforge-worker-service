@@ -22,7 +22,12 @@ def build_graph(req: AgentSessionRequested, settings: Settings, ctx: ToolContext
 
     g.set_entry_point("supervisor")
 
-    max_iter = req.team.max_iterations
+    # Each round costs ~ (len(agents) + 1) supervisor visits; allow enough head-room
+    # for all rounds plus a small safety buffer, never below the requested cap.
+    max_iter = max(
+        req.team.max_iterations,
+        req.team.max_rounds * (len(req.team.agents) + 1) + 2,
+    )
 
     def route(state: GraphState):
         if state["iterations"] >= max_iter:
